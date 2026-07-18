@@ -1,0 +1,88 @@
+{
+  "name": "claude-terminals",
+  "displayName": "Claude Terminals",
+  "description": "Launch preset grids of Claude Code terminals in the editor area.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeTerminals.openPreset",
+        "title": "Claude Terminals: Open Preset…",
+        "category": "Claude Terminals"
+      },
+      {
+        "command": "claudeTerminals.closeAll",
+        "title": "Claude Terminals: Close All Claude Terminals",
+        "category": "Claude Terminals"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeTerminals",
+          "title": "Claude Terminals",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeTerminals": [
+        {
+          "id": "claudeTerminals.presetsView",
+          "name": "Presets",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claude Terminals",
+      "properties": {
+        "claudeTerminals.defaultCommand": {
+          "type": "string",
+          "default": "claude",
+          "description": "Command sent to each terminal when a preset doesn't specify its own command."
+        },
+        "claudeTerminals.presets": {
+          "type": "array",
+          "description": "Presets shown in the picker and sidebar. Each preset is either { name, count } (opens N terminals running the default command) or { name, terminals: [{ name?, cwd?, command? }] } for full control.",
+          "default": [
+            { "name": "2 Claudes", "count": 2 },
+            { "name": "3 Claudes", "count": 3 },
+            { "name": "4 Claudes", "count": 4 },
+            { "name": "6 Claudes", "count": 6 }
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "count": { "type": "number" },
+              "command": { "type": "string" },
+              "terminals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "cwd": { "type": "string" },
+                    "command": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
