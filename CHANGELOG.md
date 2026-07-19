@@ -51,6 +51,31 @@ All notable changes to the Claude Terminals extension are documented here.
     detection so they never claim a tile and are never closed. No-op in a
     dedicated terminal window.
 
+- **"Super weird" grid for odd terminal counts (notably 5).** Opening a 5-Claude
+  preset produced a broken layout — a tab in the wrong tile, two terminals merged
+  into one, or a blank tile — instead of a clean 3-over-2.
+
+  Root cause: terminals are created in a flat left-to-right row and then reshaped
+  into the target grid by `setEditorLayout`. For counts that don't fill a
+  rectangle (5 → 3/2, 7 → 3/2/2, …) that target tree is **asymmetric**, and a
+  single reshape pass maps the flat groups onto it unreliably — VS Code drops a
+  tab into the wrong tile, tabs two together, or leaves a blank. Even counts
+  (4 → 2/2, 6 → 3/3) have symmetric rows and were unaffected.
+
+  Fix:
+  - New `applyGridReconcile(intended)` replaces the one-shot
+    setLayout → distribute → setLayout in every tiling path. It loops up to 5×
+    {`setEditorLayout` → `distributeOneTabPerGroup` → `closeEmptyGroups`} and
+    exits the instant the editor area is exactly `intended` groups with one tab
+    each — so a grid that lands cleanly on the first pass costs no extra work.
+  - All four tiling sites now call it: `spawnTerminals`, `regridAfterClose`,
+    `rearrangeGrid`, and `rearrangeAllEditors` (the last three previously each had
+    their own ad-hoc, non-looping tiling).
+  - `buildGridLayout` now emits an explicit `size: 1` on every row and every tile
+    so the split is deterministic — even row heights and even tile widths within
+    each row. (The short bottom row's tiles are still wider than the top's; that's
+    inherent to a 3/2 and not a bug.)
+
 ### Changed
 
 - Extracted `sortedGroups()` and `focusGroup()` to module scope so
