@@ -16,6 +16,31 @@ A tiny personal VS Code extension: pick a preset and it opens that many
 - **Finish notifications** — an OS-native banner when a Claude terminal finishes
   a turn and is waiting on you (see below).
 
+## Set it up with Claude Code
+
+Don't want to do the steps by hand? Clone this repo, open it in VS Code, and
+paste this prompt into Claude Code — it'll do the install and the notification
+wiring for you:
+
+```text
+Set up the Claude Terminals VS Code extension from this folder for permanent
+use on my machine:
+
+1. Symlink this folder into my VS Code extensions directory
+   (~/.vscode/extensions/claude-terminals — use ~/.vscode-insiders/... if I run
+   Insiders) so the sidebar and commands are always available.
+2. Enable the proposed API needed for finish notifications: add
+   "local.claude-terminals" to the "enable-proposed-api" array in
+   ~/.vscode/argv.json (create the file / array if missing), without clobbering
+   anything already there.
+3. Tell me to fully quit and reopen VS Code, and remind me to turn on Claude
+   Code's terminal bell (/config → notifications) so finish notifications fire.
+
+Show me what you changed before restarting.
+```
+
+Or set it up manually below.
+
 ## Install it for yourself (no publishing)
 
 Pick whichever is easier.

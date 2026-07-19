@@ -59,6 +59,8 @@ All notable changes to the Claude Terminals extension are documented here.
 ### Docs
 
 - Added a grid screenshot (`media/screenshots/grid.png`) to the README hero.
+- Added a copy-paste "Set it up with Claude Code" prompt to the README that
+  automates the symlink install and proposed-API notification wiring.
 
 ### Notes
 
