@@ -346,7 +346,7 @@ function handleTerminalData(terminal, data) {
   // user clicking the notification brings VS Code forward). Only this window has
   // the terminal in `owned`, so only it will reveal — the right window wins.
   pendingReveal = { terminal, at: now };
-  notifyOS("Claude Terminals", body, terminal);
+  notifyOS("Claude Grid", body, terminal);
 }
 
 /**
@@ -563,7 +563,7 @@ async function spawnTerminals(specs, reused) {
       await applyGridReconcile(gridCount);
     } catch (err) {
       // Layout is best-effort; terminals still work if it fails.
-      console.error("Claude Terminals: setEditorLayout failed", err);
+      console.error("Claude Grid: setEditorLayout failed", err);
     }
     await sleep(150);
   }
@@ -604,7 +604,7 @@ function writeSpill(specs, folder, assignedWinId) {
       })
     );
   } catch (err) {
-    console.error("Claude Terminals: writeSpill failed", err);
+    console.error("Claude Grid: writeSpill failed", err);
   }
 }
 
@@ -633,7 +633,7 @@ async function openOverflowWindow(folder) {
       return;
     } catch (err) {
       console.error(
-        "Claude Terminals: duplicateWorkspaceInNewWindow failed, opening a blank window",
+        "Claude Grid: duplicateWorkspaceInNewWindow failed, opening a blank window",
         err
       );
     }
@@ -776,7 +776,7 @@ async function rearrangeGrid() {
   try {
     await applyGridReconcile(sortedGroups().length);
   } catch (err) {
-    console.error("Claude Terminals: rearrange setEditorLayout failed", err);
+    console.error("Claude Grid: rearrange setEditorLayout failed", err);
     vscode.window.showWarningMessage(
       "Couldn't rearrange the terminal grid. Make sure the Claude terminals are in the editor area."
     );
@@ -822,7 +822,7 @@ function scheduleAutoRegrid() {
   autoRegridTimer = setTimeout(() => {
     autoRegridTimer = null;
     regridAfterClose().catch((err) =>
-      console.error("Claude Terminals: auto-regrid failed", err)
+      console.error("Claude Grid: auto-regrid failed", err)
     );
   }, 250);
 }
@@ -869,7 +869,7 @@ async function regridAfterClose() {
   try {
     await applyGridReconcile(gridCount);
   } catch (err) {
-    console.error("Claude Terminals: regridAfterClose setEditorLayout failed", err);
+    console.error("Claude Grid: regridAfterClose setEditorLayout failed", err);
   }
 }
 
@@ -895,7 +895,7 @@ async function rearrangeAllEditors() {
   try {
     await applyGridReconcile(total);
   } catch (err) {
-    console.error("Claude Terminals: grid all failed", err);
+    console.error("Claude Grid: grid all failed", err);
     vscode.window.showWarningMessage("Couldn't grid the editor tabs.");
   }
 }
@@ -1036,7 +1036,7 @@ class PresetsViewProvider {
         if (preset) openPreset(preset);
       } else if (msg && msg.type === "addTerminal") {
         addTerminal().catch((err) =>
-          console.error("Claude Terminals: addTerminal failed", err)
+          console.error("Claude Grid: addTerminal failed", err)
         );
       } else if (msg && msg.type === "rearrange") {
         rearrangeGrid();
@@ -1044,7 +1044,7 @@ class PresetsViewProvider {
         rearrangeAllEditors();
       } else if (msg && msg.type === "closeAll") {
         closeAll().catch((err) =>
-          console.error("Claude Terminals: closeAll failed", err)
+          console.error("Claude Grid: closeAll failed", err)
         );
       } else if (msg && msg.type === "settings") {
         vscode.commands.executeCommand(
@@ -1360,7 +1360,7 @@ function sendToWindow(winId, specs) {
       JSON.stringify({ at: Date.now(), specs })
     );
   } catch (err) {
-    console.error("Claude Terminals: sendToWindow failed", err);
+    console.error("Claude Grid: sendToWindow failed", err);
   }
 }
 
@@ -1547,7 +1547,7 @@ function activate(context) {
     );
   } else {
     console.warn(
-      "Claude Terminals: terminalDataWriteEvent proposed API not enabled — " +
+      "Claude Grid: terminalDataWriteEvent proposed API not enabled — " +
         "finish notifications disabled. Add \"local.claude-terminals\" to the " +
         "\"enable-proposed-api\" array in ~/.vscode/argv.json and restart."
     );
@@ -1563,7 +1563,7 @@ function activate(context) {
   const hbTimer = setInterval(writeHeartbeat, 2000);
   const inboxTimer = setInterval(() => {
     pollInbox().catch((err) =>
-      console.error("Claude Terminals: pollInbox failed", err)
+      console.error("Claude Grid: pollInbox failed", err)
     );
   }, 1000);
   context.subscriptions.push({
@@ -1578,7 +1578,7 @@ function activate(context) {
 
   // If this window was opened to receive spillover terminals, pick them up.
   consumeSpill().catch((err) =>
-    console.error("Claude Terminals: consumeSpill failed", err)
+    console.error("Claude Grid: consumeSpill failed", err)
   );
 }
 

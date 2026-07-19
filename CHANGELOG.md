@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Claude Terminals extension are documented here.
+All notable changes to the Claude Grid extension are documented here.
 
 ## [Unreleased]
 
@@ -80,6 +80,15 @@ All notable changes to the Claude Terminals extension are documented here.
 
 - Extracted `sortedGroups()` and `focusGroup()` to module scope so
   `spawnTerminals` and `rearrangeAllEditors` share one implementation.
+
+### Changed
+
+- Renamed the extension's display name from **Claude Terminals** to **Claude
+  Grid** (command titles, activity-bar/sidebar title, settings category, OS
+  notification title, README). Internal ids are unchanged — the package id stays
+  `claude-terminals`, commands stay `claudeTerminals.*`, settings keys stay
+  `claudeTerminals.*`, and the proposed-API id stays `local.claude-terminals` —
+  so existing `settings.json` presets and `argv.json` enablement keep working.
 
 ### Docs
 

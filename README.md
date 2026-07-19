@@ -1,4 +1,4 @@
-# Claude Terminals
+# Claude Grid
 
 A tiny personal VS Code extension: pick a preset and it opens that many
 `claude` terminals, tiled into a grid in the editor area.
@@ -11,7 +11,7 @@ A tiny personal VS Code extension: pick a preset and it opens that many
   each running `claude` in your workspace folder.
 - A **dark / monochrome sidebar** (activity-bar icon on the left) with a
   clickable button per preset.
-- Also available from the Command Palette: **“Claude Terminals: Open Preset…”**
+- Also available from the Command Palette: **“Claude Grid: Open Preset…”**
 - **Close All** removes just the terminals this extension opened.
 - **Finish notifications** — an OS-native banner when a Claude terminal finishes
   a turn and is waiting on you (see below).
@@ -23,7 +23,7 @@ paste this prompt into Claude Code — it'll do the install and the notification
 wiring for you:
 
 ```text
-Set up the Claude Terminals VS Code extension from this folder for permanent
+Set up the Claude Grid VS Code extension from this folder for permanent
 use on my machine:
 
 1. Symlink this folder into my VS Code extensions directory
@@ -73,7 +73,7 @@ code --install-extension claude-terminals-0.0.1.vsix
 
 ## Customizing presets
 
-Open **Settings → search “Claude Terminals”**, or click **“Edit presets”** in
+Open **Settings → search “Claude Grid”**, or click **“Edit presets”** in
 the sidebar. Edit `claudeTerminals.presets` in `settings.json`.
 
 Two forms are supported:
@@ -112,7 +112,7 @@ awaiting you; the extension watches its terminals' output for that bell and
 notifies (macOS `osascript`, Linux `notify-send`, Windows falls back to an
 in-window message).
 
-Settings (**Settings → “Claude Terminals”**):
+Settings (**Settings → “Claude Grid”**):
 
 - `claudeTerminals.notifyOnFinish` — master on/off (default on).
 - `claudeTerminals.notifyOnlyWhenUnfocused` — only notify when VS Code isn't

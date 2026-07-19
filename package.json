@@ -1,6 +1,6 @@
 {
   "name": "claude-terminals",
-  "displayName": "Claude Terminals",
+  "displayName": "Claude Grid",
   "description": "Launch preset grids of Claude Code terminals in the editor area.",
   "version": "0.0.1",
   "publisher": "local",
@@ -23,36 +23,36 @@
     "commands": [
       {
         "command": "claudeTerminals.openPreset",
-        "title": "Claude Terminals: Open Preset…",
-        "category": "Claude Terminals"
+        "title": "Claude Grid: Open Preset…",
+        "category": "Claude Grid"
       },
       {
         "command": "claudeTerminals.closeAll",
-        "title": "Claude Terminals: Close All Claude Terminals",
-        "category": "Claude Terminals"
+        "title": "Claude Grid: Close All Terminals",
+        "category": "Claude Grid"
       },
       {
         "command": "claudeTerminals.addTerminal",
-        "title": "Claude Terminals: Add One Terminal",
-        "category": "Claude Terminals",
+        "title": "Claude Grid: Add One Terminal",
+        "category": "Claude Grid",
         "icon": "$(add)"
       },
       {
         "command": "claudeTerminals.rearrange",
-        "title": "Claude Terminals: Rearrange Into Grid",
-        "category": "Claude Terminals"
+        "title": "Claude Grid: Rearrange Into Grid",
+        "category": "Claude Grid"
       },
       {
         "command": "claudeTerminals.rearrangeAll",
-        "title": "Claude Terminals: Grid All Editor Tabs",
-        "category": "Claude Terminals"
+        "title": "Claude Grid: Grid All Editor Tabs",
+        "category": "Claude Grid"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "claudeTerminals",
-          "title": "Claude Terminals",
+          "title": "Claude Grid",
           "icon": "media/icon.svg"
         }
       ]
@@ -76,7 +76,7 @@
       ]
     },
     "configuration": {
-      "title": "Claude Terminals",
+      "title": "Claude Grid",
       "properties": {
         "claudeTerminals.defaultCommand": {
           "type": "string",
