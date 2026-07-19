@@ -3,6 +3,8 @@
 A tiny personal VS Code extension: pick a preset and it opens that many
 `claude` terminals, tiled into a grid in the editor area.
 
+![Six Claude Code terminals tiled into a grid, with the Presets sidebar on the right](media/screenshots/grid.png)
+
 ## What it does
 
 - Presets like **6 Claudes** → opens 6 terminals arranged in a 3×2 grid,
@@ -11,6 +13,8 @@ A tiny personal VS Code extension: pick a preset and it opens that many
   clickable button per preset.
 - Also available from the Command Palette: **“Claude Terminals: Open Preset…”**
 - **Close All** removes just the terminals this extension opened.
+- **Finish notifications** — an OS-native banner when a Claude terminal finishes
+  a turn and is waiting on you (see below).
 
 ## Install it for yourself (no publishing)
 
@@ -71,6 +75,48 @@ Two forms are supported:
 
 - `cwd` is relative to the workspace folder (or an absolute path).
 - If a terminal has no `command`, it runs `claudeTerminals.defaultCommand`.
+
+## Finish notifications
+
+When one of your Claude terminals finishes a turn, the extension fires a
+**system notification** — a real OS banner that shows even when VS Code is in
+the background — so you know an agent is waiting without watching the grid.
+
+How it works: `claude` rings the terminal **bell** (`\x07`) when it's done and
+awaiting you; the extension watches its terminals' output for that bell and
+notifies (macOS `osascript`, Linux `notify-send`, Windows falls back to an
+in-window message).
+
+Settings (**Settings → “Claude Terminals”**):
+
+- `claudeTerminals.notifyOnFinish` — master on/off (default on).
+- `claudeTerminals.notifyOnlyWhenUnfocused` — only notify when VS Code isn't
+  focused (default off).
+- `claudeTerminals.notifyCooldownMs` — min ms between banners from one terminal
+  (default 4000).
+
+**Two prerequisites** — without both, no notification fires:
+
+1. **Enable the proposed API.** Output-reading uses VS Code's
+   `terminalDataWriteEvent` proposed API. For a locally-installed (non-
+   marketplace) extension, add the extension id to `~/.vscode/argv.json` and
+   fully restart VS Code:
+
+   ```jsonc
+   { "enable-proposed-api": ["local.claude-terminals"] }
+   ```
+
+   (Or, when running from source via **F5**, launch the dev host with
+   `--enable-proposed-api local.claude-terminals`.) If it isn't enabled the
+   feature simply no-ops — you'll see a one-line warning in the Extension Host
+   log and everything else keeps working.
+
+2. **Enable Claude Code's terminal bell.** Detection depends on `claude`
+   actually ringing the bell on completion — check Claude Code's notification
+   settings (`/config` → notifications, or `preferredNotifChannel`).
+
+> Caveat: proposed APIs can change between VS Code releases, and forks (Cursor,
+> etc.) may not honor `argv.json` proposed-API enablement.
 
 ## Notes / limits
 
