@@ -1,7 +1,7 @@
 {
   "name": "claude-terminals",
-  "displayName": "Claude Grid",
-  "description": "Launch preset grids of Claude Code terminals in the editor area.",
+  "displayName": "Codex Grid",
+  "description": "Launch preset grids of Codex or Claude Code terminals in the editor area.",
   "version": "0.0.1",
   "publisher": "local",
   "private": true,
@@ -23,36 +23,36 @@
     "commands": [
       {
         "command": "claudeTerminals.openPreset",
-        "title": "Claude Grid: Open Preset…",
-        "category": "Claude Grid"
+        "title": "Codex Grid: Open Preset…",
+        "category": "Codex Grid"
       },
       {
         "command": "claudeTerminals.closeAll",
-        "title": "Claude Grid: Close All Terminals",
-        "category": "Claude Grid"
+        "title": "Codex Grid: Close All Terminals",
+        "category": "Codex Grid"
       },
       {
         "command": "claudeTerminals.addTerminal",
-        "title": "Claude Grid: Add One Terminal",
-        "category": "Claude Grid",
+        "title": "Codex Grid: Add One Terminal",
+        "category": "Codex Grid",
         "icon": "$(add)"
       },
       {
         "command": "claudeTerminals.rearrange",
-        "title": "Claude Grid: Rearrange Into Grid",
-        "category": "Claude Grid"
+        "title": "Codex Grid: Rearrange Into Grid",
+        "category": "Codex Grid"
       },
       {
         "command": "claudeTerminals.rearrangeAll",
-        "title": "Claude Grid: Grid All Editor Tabs",
-        "category": "Claude Grid"
+        "title": "Codex Grid: Grid All Editor Tabs",
+        "category": "Codex Grid"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "claudeTerminals",
-          "title": "Claude Grid",
+          "title": "Codex Grid",
           "icon": "media/icon.svg"
         }
       ]
@@ -76,23 +76,41 @@
       ]
     },
     "configuration": {
-      "title": "Claude Grid",
+      "title": "Codex Grid",
       "properties": {
+        "claudeTerminals.agent": {
+          "type": "string",
+          "enum": ["codex", "claude"],
+          "enumItemLabels": ["Codex", "Claude"],
+          "default": "codex",
+          "description": "Agent launched by presets and Add terminal. You can also switch this directly from the sidebar."
+        },
+        "claudeTerminals.codexCommand": {
+          "type": "string",
+          "default": "codex",
+          "description": "Command used when Codex is selected."
+        },
+        "claudeTerminals.claudeCommand": {
+          "type": "string",
+          "default": "claude",
+          "description": "Command used when Claude is selected."
+        },
         "claudeTerminals.defaultCommand": {
           "type": "string",
           "default": "claude",
-          "description": "Command sent to each terminal when a preset doesn't specify its own command."
+          "description": "Legacy setting. Use agent, codexCommand, and claudeCommand instead.",
+          "deprecationMessage": "Use claudeTerminals.agent with claudeTerminals.codexCommand or claudeTerminals.claudeCommand."
         },
         "claudeTerminals.launchStaggerMs": {
           "type": "number",
           "default": 800,
-          "description": "Delay (ms) between starting each terminal's command. Staggering avoids multiple `claude` sessions racing to refresh auth at once, which can force a re-login. Set to 0 to launch them simultaneously."
+          "description": "Delay (ms) between starting each agent command. Staggering avoids multiple sessions racing to refresh auth at once. Set to 0 to launch them simultaneously."
         },
         "claudeTerminals.maxColumns": {
           "type": "number",
           "default": 3,
           "minimum": 1,
-          "description": "Maximum terminals per row in the grid. The grid uses the fewest rows that keep each row at or under this, then balances evenly (10 with a cap of 5 → 5/5; with a cap of 3 → 3/3/2/2). Lower this on small laptop screens (e.g. 2) so Claude's UI stays readable; raise it (e.g. 5) on a large external monitor."
+          "description": "Maximum terminals per row in the grid. The grid uses the fewest rows that keep each row at or under this, then balances evenly (10 with a cap of 5 → 5/5; with a cap of 3 → 3/3/2/2). Lower this on small laptop screens (e.g. 2) so the agent UI stays readable; raise it (e.g. 5) on a large external monitor."
         },
         "claudeTerminals.spilloverThreshold": {
           "type": "number",
@@ -103,12 +121,12 @@
         "claudeTerminals.autoRegridOnClose": {
           "type": "boolean",
           "default": true,
-          "description": "When you close one of the Claude terminals, automatically re-tile the remaining ones into a fresh grid so the layout closes the gap (e.g. a 2×2 grid with one closed collapses to a row of 3). Turn off to leave the layout untouched after a close."
+          "description": "When you close one of the agent terminals, automatically re-tile the remaining ones into a fresh grid so the layout closes the gap (e.g. a 2×2 grid with one closed collapses to a row of 3). Turn off to leave the layout untouched after a close."
         },
         "claudeTerminals.notifyOnFinish": {
           "type": "boolean",
           "default": true,
-          "description": "Show an OS-native notification banner when a Claude terminal finishes a turn (detected via the terminal bell Claude rings when it's done and waiting on you). Requires the `terminalDataWriteEvent` proposed API to be enabled — see the README. Also requires Claude Code's terminal-bell notifications to be on."
+          "description": "Show an OS-native notification banner when an owned terminal emits a bell. Requires the `terminalDataWriteEvent` proposed API to be enabled; the selected CLI must emit a bell when it finishes."
         },
         "claudeTerminals.notifyOnlyWhenUnfocused": {
           "type": "boolean",
@@ -123,17 +141,17 @@
         },
         "claudeTerminals.presets": {
           "type": "array",
-          "description": "Presets shown in the picker and sidebar. Each preset is either { name, count } (opens N terminals running the default command) or { name, terminals: [{ name?, cwd?, command? }] } for full control.",
+          "description": "Presets shown in the picker and sidebar. Each preset is either { name, count } (opens N terminals running the selected agent command) or { name, terminals: [{ name?, cwd?, command? }] } for full control.",
           "default": [
-            { "name": "2 Claudes", "count": 2 },
-            { "name": "3 Claudes", "count": 3 },
-            { "name": "4 Claudes", "count": 4 },
-            { "name": "5 Claudes", "count": 5 },
-            { "name": "6 Claudes", "count": 6 },
-            { "name": "7 Claudes", "count": 7 },
-            { "name": "8 Claudes", "count": 8 },
-            { "name": "9 Claudes", "count": 9 },
-            { "name": "10 Claudes", "count": 10 }
+            { "name": "2 Agents", "count": 2 },
+            { "name": "3 Agents", "count": 3 },
+            { "name": "4 Agents", "count": 4 },
+            { "name": "5 Agents", "count": 5 },
+            { "name": "6 Agents", "count": 6 },
+            { "name": "7 Agents", "count": 7 },
+            { "name": "8 Agents", "count": 8 },
+            { "name": "9 Agents", "count": 9 },
+            { "name": "10 Agents", "count": 10 }
           ],
           "items": {
             "type": "object",

@@ -4,7 +4,54 @@ All notable changes to the Claude Grid extension are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **Codex-first agent switch.** Presets and Add Terminal now launch Codex by
+  default. The sidebar has a persistent Codex/Claude switch, with separate
+  configurable commands for each CLI; explicit commands in custom presets are
+  still honored. The README now includes real six-terminal screenshots for both
+  the default Codex mode and optional Claude mode.
+
+- **Cursor support.** Installing into Cursor works the same as VS Code, just
+  under Cursor's data folder: symlink into `~/.cursor/extensions` and enable the
+  `terminalDataWriteEvent` proposal in `~/.cursor/argv.json`. Cursor 3.16
+  (VS Code 1.128 base) ships that proposal, so finish notifications work there
+  too. README documents both paths, and the "proposed API not enabled" console
+  warning now names the right `argv.json` for the running editor (VS Code,
+  Insiders, or Cursor) instead of always saying `~/.vscode/argv.json`.
+
 ### Fixed
+
+- **Cursor: opening any preset tore its own grid down and closed the window.**
+  Terminals appeared, focus ping-ponged between them, `claude` never started,
+  and the window vanished (the app stayed running, so it read as "Cursor
+  crashed").
+
+  Root cause: Cursor doesn't surface terminal *editors* through the
+  `window.tabGroups` API — the group holding a terminal reports zero tabs.
+  Every layout primitive here reads that model, so `closeEmptyGroups()` saw a
+  grid of "empty" groups and reaped the ones holding the terminals (the visible
+  focus dance is its focus-then-close loop), the staggered `sendText` then had
+  no terminals left to type into, and the emptied editor area took the window
+  with it.
+
+  Fix: probe the host once, with terminals known to be in the editor area
+  (`probeTabModel`). If the tab model can't see them, skip every tab-driven
+  step — empty-group reaping, non-terminal folding, one-tab-per-group
+  distribution, grid reconcile passes — and tile with a single
+  `vscode.setEditorLayout`, which needs no tab model. `regridAfterClose` falls
+  back to its own `owned` tally there. The verdict is cached in `globalState`
+  (re-probed each session, so a fork that gains terminal tabs isn't stuck with
+  a stale verdict) and logged once to the extension host console. Also route
+  the last raw `instanceof vscode.TabInputTerminal` checks through a helper —
+  the type is missing on some forks, where `instanceof undefined` throws.
+
+- **VS Code and Cursor stole each other's terminals.** All cross-window
+  handoff files (spill, heartbeats, routing messages) had fixed names in a
+  shared `tmpdir`, so with both editors open a Cursor preset's overflow specs
+  could be claimed by a VS Code window, and a `+` press routed into the other
+  app — terminals landing in the wrong editor with focus jumping out from under
+  you. The filenames are now namespaced per editor app (`vscode.env.appName`).
 
 - **Overflow window flashed open then closed, creating no extra terminals.**
   Opening a preset for more than the spillover threshold (default 6), or pressing
