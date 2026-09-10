@@ -16,8 +16,8 @@ const owned = new Set();
 let extContext = null;
 const OWNED_KEY = "claudeTerminals.ownedNames";
 const PIDS_KEY = "claudeTerminals.ownedPids";
-/** Terminals we create are named "Claude 1", "Claude 2", … — a stable pattern. */
-const CLAUDE_NAME_RE = /^Claude \d+$/i;
+/** Terminals we create are named "Codex 1" or "Claude 1" — stable patterns. */
+const AGENT_NAME_RE = /^(?:Codex|Claude) \d+$/i;
 /** Names we owned pre-reload but haven't matched to a restored terminal yet. */
 let restorePending = new Set();
 /** Process ids we owned pre-reload — stable across a window reload (same pty). */
@@ -68,7 +68,7 @@ async function persistOwnedNames() {
  */
 async function tryAdopt(terminal) {
   if (owned.has(terminal)) return;
-  let match = restorePending.has(terminal.name) || CLAUDE_NAME_RE.test(terminal.name);
+  let match = restorePending.has(terminal.name) || AGENT_NAME_RE.test(terminal.name);
   if (!match && restorePendingPids.size > 0) {
     const pid = await terminal.processId.catch(() => undefined);
     if (typeof pid === "number" && restorePendingPids.has(pid)) match = true;
@@ -99,7 +99,21 @@ async function adoptRestoredTerminals() {
  * and opens a second window; that window's copy of the extension reads this on
  * startup and opens its share. Each window only ever grids its own terminals.
  */
-const SPILL_FILE = path.join(os.tmpdir(), "claude-terminals-spill.json");
+/**
+ * Editor-app namespace for every file this extension drops in tmpdir. VS Code,
+ * Insiders and Cursor share one tmpdir, and a copy of this extension can be
+ * installed in each — without a namespace a Cursor preset's overflow specs can
+ * be claimed by a VS Code window (and a `+` routed to one), so terminals land
+ * in the wrong app and focus jumps out from under you.
+ */
+const APP_KEY = String(vscode.env.appName || "editor")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-|-$/g, "");
+const SPILL_FILE = path.join(
+  os.tmpdir(),
+  `claude-terminals-${APP_KEY}-spill.json`
+);
 const SPILL_TTL_MS = 90000;
 
 // --- Cross-window overflow routing -----------------------------------------
@@ -110,8 +124,8 @@ const SPILL_TTL_MS = 90000;
 // crowding this one; if none has room, a fresh window is opened to take it.
 // This lets you keep pressing + in the main sidebar while each overflow lands
 // and re-tiles in the extra window. File-per-window/-message avoids write races.
-const HB_PREFIX = "claude-terminals-hb-";
-const MSG_PREFIX = "claude-terminals-msg-";
+const HB_PREFIX = `claude-terminals-${APP_KEY}-hb-`;
+const MSG_PREFIX = `claude-terminals-${APP_KEY}-msg-`;
 const HB_TTL_MS = 6000; // a heartbeat older than this ⇒ that window is gone
 const MSG_TTL_MS = 90000; // orphaned messages older than this get reaped
 const PENDING_TTL_MS = 20000; // trust a just-opened window this long pre-heartbeat
@@ -138,6 +152,82 @@ function sortedGroups() {
 }
 
 /**
+ * Whether a tab is a terminal editor. `vscode.TabInputTerminal` is absent on
+ * some VS Code forks, and `x instanceof undefined` throws, so check it exists.
+ */
+function isTerminalTab(tab) {
+  return (
+    typeof vscode.TabInputTerminal === "function" &&
+    tab.input instanceof vscode.TabInputTerminal
+  );
+}
+
+/**
+ * Does this host surface terminal *editors* through the `window.tabGroups` API?
+ *
+ * VS Code does. Cursor does not — the group holding a terminal reports no tabs
+ * there. Every layout primitive below reads that model, so on such a host they
+ * conclude the editor area is full of empty groups and close the very groups
+ * holding the terminals: the terminals flash up, focus ping-pongs between them
+ * as each group is reaped, `claude` is never sent (the staggered sendText comes
+ * after tiling), and the emptied window closes itself — which reads as "Cursor
+ * crashed" even though the app is still running.
+ *
+ * `null` until probed; a probe result of `false` disables the tab-driven steps.
+ */
+let tabModelSeesTerminals = null;
+
+/** globalState key so a host's probe result survives into the next session. */
+const TAB_MODEL_KEY = "claudeTerminals.tabModelSeesTerminals";
+/** Whether this session has run its own probe (the stored value is only a hint,
+ * so a fork that gains terminal-editor tabs isn't stuck with a stale verdict). */
+let tabModelProbed = false;
+
+/** False only once a probe has proven the host hides terminal editors. */
+function tabModelUsable() {
+  return tabModelSeesTerminals !== false;
+}
+
+/**
+ * Probe with `expected` terminals known to be sitting in the editor area: if the
+ * tab model can't see a single one, the tab-driven steps (reaping empty groups,
+ * folding non-terminal ones, one-tab-per-group) are skipped from here on and we
+ * tile with `setEditorLayout` alone, which needs no tab model. Retries a couple
+ * of times so a tab that simply hasn't registered yet isn't misread as absent.
+ */
+async function probeTabModel(expected) {
+  if (tabModelProbed || !expected) return;
+  let groups = [];
+  let tabs = 0;
+  let terminals = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    groups = vscode.window.tabGroups.all;
+    tabs = groups.reduce((sum, g) => sum + g.tabs.length, 0);
+    terminals = groups.reduce(
+      (sum, g) => sum + g.tabs.filter(isTerminalTab).length,
+      0
+    );
+    if (terminals > 0) break;
+    await sleep(150);
+  }
+  tabModelSeesTerminals = terminals > 0;
+  tabModelProbed = true;
+  // Remember it: the layout helpers then behave correctly from the first click
+  // of the next session, before any terminal exists to probe with.
+  if (extContext) extContext.globalState.update(TAB_MODEL_KEY, tabModelSeesTerminals);
+  console.warn(
+    `Codex Grid: tab model probe on ${vscode.env.appName} — expected ` +
+      `${expected} terminal editor(s); tabGroups reports ${groups.length} ` +
+      `group(s), ${tabs} tab(s), ${terminals} terminal tab(s); ` +
+      `TabInputTerminal ${
+        typeof vscode.TabInputTerminal === "function" ? "present" : "MISSING"
+      }. Tab-driven layout steps ${
+        tabModelSeesTerminals ? "enabled" : "DISABLED for this host"
+      }.`
+  );
+}
+
+/**
  * Focus the group at position `idx` (0-based) using relative navigation, which
  * works for any number of groups (the numbered focus commands stop at 8).
  */
@@ -156,6 +246,9 @@ async function focusGroup(idx) {
  * group standing. Guarded against runaway loops.
  */
 async function closeEmptyGroups() {
+  // On a host that hides terminal editors every group looks empty — reaping
+  // them would close the grid we just built. See probeTabModel.
+  if (!tabModelUsable()) return;
   let guard = 0;
   while (guard++ < 40) {
     const groups = sortedGroups();
@@ -175,6 +268,7 @@ async function closeEmptyGroups() {
  * sharing a tile after a layout collapse.
  */
 async function distributeOneTabPerGroup(maxGroups) {
+  if (!tabModelUsable()) return; // nothing to read tabs from — see probeTabModel
   let guard = 0;
   while (guard++ < maxGroups * maxGroups + 8) {
     const groups = sortedGroups();
@@ -201,6 +295,14 @@ async function distributeOneTabPerGroup(maxGroups) {
  */
 async function applyGridReconcile(intended) {
   if (intended < 2) return;
+  if (!tabModelUsable()) {
+    // No tab model to verify against: impose the grid once and trust it.
+    await vscode.commands.executeCommand(
+      "vscode.setEditorLayout",
+      buildGridLayout(intended)
+    );
+    return;
+  }
   for (let pass = 0; pass < 5; pass++) {
     await vscode.commands.executeCommand(
       "vscode.setEditorLayout",
@@ -346,19 +448,33 @@ function handleTerminalData(terminal, data) {
   // user clicking the notification brings VS Code forward). Only this window has
   // the terminal in `owned`, so only it will reveal — the right window wins.
   pendingReveal = { terminal, at: now };
-  notifyOS("Claude Grid", body, terminal);
+  notifyOS("Codex Grid", body, terminal);
 }
 
 /**
  * Normalize a preset into a flat list of terminal specs:
  *   { name, cwd, command }
  */
+function selectedAgent() {
+  return getConfig().get("agent", "codex") === "claude" ? "claude" : "codex";
+}
+
+function selectedAgentLabel() {
+  return selectedAgent() === "claude" ? "Claude" : "Codex";
+}
+
+function selectedAgentCommand() {
+  const agent = selectedAgent();
+  return getConfig().get(`${agent}Command`) || agent;
+}
+
 function expandPreset(preset) {
-  const defaultCommand = getConfig().get("defaultCommand") || "claude";
+  const agentLabel = selectedAgentLabel();
+  const defaultCommand = selectedAgentCommand();
 
   if (Array.isArray(preset.terminals) && preset.terminals.length > 0) {
     return preset.terminals.map((t, i) => ({
-      name: t.name || `Claude ${i + 1}`,
+      name: t.name || `${agentLabel} ${i + 1}`,
       cwd: t.cwd || undefined,
       command: t.command || defaultCommand,
     }));
@@ -368,7 +484,7 @@ function expandPreset(preset) {
   const command = preset.command || defaultCommand;
   const specs = [];
   for (let i = 0; i < count; i++) {
-    specs.push({ name: `Claude ${i + 1}`, cwd: undefined, command });
+    specs.push({ name: `${agentLabel} ${i + 1}`, cwd: undefined, command });
   }
   return specs;
 }
@@ -428,7 +544,7 @@ async function openPreset(preset) {
       mode: "new",
     };
     const choice = await vscode.window.showQuickPick([reuseItem, newItem], {
-      placeHolder: `${existing.length} Claude terminal${plural} already open — reuse or open new?`,
+      placeHolder: `${existing.length} agent terminal${plural} already open — reuse or open new?`,
     });
     if (!choice) return; // cancelled
     if (choice.mode === "reuse") reuseCount = reuseN;
@@ -504,7 +620,7 @@ async function spawnTerminals(specs, reused) {
     }
 
     const terminal = vscode.window.createTerminal({
-      name: spec.name || nextClaudeName(),
+      name: spec.name || nextAgentName(),
       cwd: spec.cwd || undefined,
       location: { viewColumn: vscode.ViewColumn.Active },
     });
@@ -522,6 +638,10 @@ async function spawnTerminals(specs, reused) {
   for (const t of reused) t.show(false);
   await sleep(120);
 
+  // Terminals are in the editor area now, so this is the moment to find out
+  // whether this host lets us see them as tabs before any reaping happens.
+  await probeTabModel(created.length + reused.length);
+
   // Drop phantom empty groups so they can't become blank tiles or throw off the
   // group count when we tile — the root cause of the "empty first tile + two
   // terminals merged" bug.
@@ -533,9 +653,8 @@ async function spawnTerminals(specs, reused) {
   // never closed, and no two terminals get merged. Once a non-terminal tab lands
   // in a group that also has a terminal, that group no longer matches, so this
   // converges (guard-bounded). In a dedicated terminal window it's a no-op.
-  const isTerminalTab = (t) => t.input instanceof vscode.TabInputTerminal;
   let guard = 0;
-  while (guard++ < 60) {
+  while (tabModelUsable() && guard++ < 60) {
     const groups = sortedGroups();
     if (groups.length <= 1) break;
     const idx = groups.findIndex(
@@ -563,7 +682,7 @@ async function spawnTerminals(specs, reused) {
       await applyGridReconcile(gridCount);
     } catch (err) {
       // Layout is best-effort; terminals still work if it fails.
-      console.error("Claude Grid: setEditorLayout failed", err);
+      console.error("Codex Grid: setEditorLayout failed", err);
     }
     await sleep(150);
   }
@@ -604,7 +723,7 @@ function writeSpill(specs, folder, assignedWinId) {
       })
     );
   } catch (err) {
-    console.error("Claude Grid: writeSpill failed", err);
+    console.error("Codex Grid: writeSpill failed", err);
   }
 }
 
@@ -633,7 +752,7 @@ async function openOverflowWindow(folder) {
       return;
     } catch (err) {
       console.error(
-        "Claude Grid: duplicateWorkspaceInNewWindow failed, opening a blank window",
+        "Codex Grid: duplicateWorkspaceInNewWindow failed, opening a blank window",
         err
       );
     }
@@ -700,13 +819,14 @@ async function consumeSpill() {
  * Next unused "Claude N" name based on the terminals we currently own, so adding
  * one after an earlier one was closed doesn't collide (owned {1,3} → "Claude 4").
  */
-function nextClaudeName() {
+function nextAgentName() {
+  const label = selectedAgentLabel();
   let max = 0;
   for (const t of owned) {
-    const m = /^Claude (\d+)$/i.exec(t.name);
+    const m = new RegExp(`^${label} (\\d+)$`, "i").exec(t.name);
     if (m) max = Math.max(max, Number(m[1]));
   }
-  return `Claude ${max + 1}`;
+  return `${label} ${max + 1}`;
 }
 
 /**
@@ -718,7 +838,7 @@ function nextClaudeName() {
  */
 async function addTerminal() {
   const folder = currentFolder();
-  const command = getConfig().get("defaultCommand") || "claude";
+  const command = selectedAgentCommand();
   const threshold = Math.max(
     0,
     Number(getConfig().get("spilloverThreshold")) || 0
@@ -750,7 +870,7 @@ async function rearrangeGrid() {
       0
     );
     const hasTerminalTabs = vscode.window.tabGroups.all.some((g) =>
-      g.tabs.some((t) => t.input instanceof vscode.TabInputTerminal)
+      g.tabs.some(isTerminalTab)
     );
     if (hasTerminalTabs && totalTabs >= 2) {
       await rearrangeAllEditors();
@@ -760,7 +880,7 @@ async function rearrangeGrid() {
       vscode.window.showInformationMessage(
         hasTerminalTabs
           ? "Only one terminal open — nothing to tile."
-          : "No Claude terminals open to rearrange. Open a preset first."
+          : "No agent terminals open to rearrange. Open a preset first."
       );
     }
     return; // 0 with nothing to tile, or exactly 1 owned terminal
@@ -776,9 +896,9 @@ async function rearrangeGrid() {
   try {
     await applyGridReconcile(sortedGroups().length);
   } catch (err) {
-    console.error("Claude Grid: rearrange setEditorLayout failed", err);
+    console.error("Codex Grid: rearrange setEditorLayout failed", err);
     vscode.window.showWarningMessage(
-      "Couldn't rearrange the terminal grid. Make sure the Claude terminals are in the editor area."
+      "Couldn't rearrange the terminal grid. Make sure the agent terminals are in the editor area."
     );
   }
 }
@@ -792,7 +912,7 @@ async function rearrangeGrid() {
  */
 function looksLikeOurs(terminal) {
   if (!terminal) return false;
-  if (CLAUDE_NAME_RE.test(terminal.name)) return true;
+  if (AGENT_NAME_RE.test(terminal.name)) return true;
   const persisted = extContext
     ? extContext.workspaceState.get(OWNED_KEY, []) || []
     : [];
@@ -804,7 +924,7 @@ function editorTerminalTabCount() {
   return vscode.window.tabGroups.all.reduce(
     (sum, g) =>
       sum +
-      g.tabs.filter((t) => t.input instanceof vscode.TabInputTerminal).length,
+      g.tabs.filter(isTerminalTab).length,
     0
   );
 }
@@ -822,7 +942,7 @@ function scheduleAutoRegrid() {
   autoRegridTimer = setTimeout(() => {
     autoRegridTimer = null;
     regridAfterClose().catch((err) =>
-      console.error("Claude Grid: auto-regrid failed", err)
+      console.error("Codex Grid: auto-regrid failed", err)
     );
   }, 250);
 }
@@ -862,14 +982,17 @@ async function regridAfterClose() {
   // Tile based on the terminals actually present in the editor area, not our
   // (possibly stale) owned tally. Below two there's nothing to grid — VS Code
   // already gives a lone terminal the whole area.
-  if (editorTerminalTabCount() < 2) return;
+  const liveTerminals = tabModelUsable()
+    ? editorTerminalTabCount()
+    : owned.size; // tab model is blind on this host — trust our own tally
+  if (liveTerminals < 2) return;
 
   const gridCount = sortedGroups().length;
   if (gridCount < 2) return;
   try {
     await applyGridReconcile(gridCount);
   } catch (err) {
-    console.error("Claude Grid: regridAfterClose setEditorLayout failed", err);
+    console.error("Codex Grid: regridAfterClose setEditorLayout failed", err);
   }
 }
 
@@ -895,7 +1018,7 @@ async function rearrangeAllEditors() {
   try {
     await applyGridReconcile(total);
   } catch (err) {
-    console.error("Claude Grid: grid all failed", err);
+    console.error("Codex Grid: grid all failed", err);
     vscode.window.showWarningMessage("Couldn't grid the editor tabs.");
   }
 }
@@ -918,7 +1041,7 @@ async function pickAndOpenPreset() {
   }));
 
   const choice = await vscode.window.showQuickPick(items, {
-    placeHolder: "Select a Claude terminal preset",
+    placeHolder: `Select a ${selectedAgentLabel()} terminal preset`,
   });
   if (choice) await openPreset(choice.preset);
 }
@@ -955,15 +1078,15 @@ async function closeAll() {
   const editorTerminalTabs = [];
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
-      if (tab.input instanceof vscode.TabInputTerminal) editorTerminalTabs.push(tab);
+      if (isTerminalTab(tab)) editorTerminalTabs.push(tab);
     }
   }
   const editorTerminalLabels = new Set(editorTerminalTabs.map((t) => t.label));
-  let claudeTabs = editorTerminalTabs.filter(
-    (t) => persistedNames.has(t.label) || CLAUDE_NAME_RE.test(t.label)
+  let agentTabs = editorTerminalTabs.filter(
+    (t) => persistedNames.has(t.label) || AGENT_NAME_RE.test(t.label)
   );
-  if (claudeTabs.length === 0 && openedHere && editorTerminalTabs.length > 0) {
-    claudeTabs = editorTerminalTabs;
+  if (agentTabs.length === 0 && openedHere && editorTerminalTabs.length > 0) {
+    agentTabs = editorTerminalTabs;
   }
 
   // Collect any live handles we still hold (in-session precision) plus any
@@ -975,7 +1098,7 @@ async function closeAll() {
     vscode.window.terminals.map(async (t) => {
       if (disposeTargets.has(t)) return;
       if (persistedNames.has(t.name)) return void disposeTargets.add(t);
-      if (CLAUDE_NAME_RE.test(t.name) && editorTerminalLabels.has(t.name)) {
+      if (AGENT_NAME_RE.test(t.name) && editorTerminalLabels.has(t.name)) {
         return void disposeTargets.add(t);
       }
       if (persistedPids.size > 0) {
@@ -989,7 +1112,7 @@ async function closeAll() {
   // is what actually removes the un-revived restored terminals that never showed
   // up in `vscode.window.terminals`. Closing per-tab so one stale ref can't abort
   // the rest. Then dispose the live handles as a belt-and-suspenders pass.
-  for (const tab of claudeTabs) {
+  for (const tab of agentTabs) {
     try {
       await vscode.window.tabGroups.close(tab, false);
     } catch (_) {}
@@ -1036,15 +1159,23 @@ class PresetsViewProvider {
         if (preset) openPreset(preset);
       } else if (msg && msg.type === "addTerminal") {
         addTerminal().catch((err) =>
-          console.error("Claude Grid: addTerminal failed", err)
+          console.error("Codex Grid: addTerminal failed", err)
         );
+      } else if (
+        msg &&
+        msg.type === "setAgent" &&
+        (msg.agent === "codex" || msg.agent === "claude")
+      ) {
+        getConfig()
+          .update("agent", msg.agent, vscode.ConfigurationTarget.Global)
+          .catch((err) => console.error("Codex Grid: setAgent failed", err));
       } else if (msg && msg.type === "rearrange") {
         rearrangeGrid();
       } else if (msg && msg.type === "rearrangeAll") {
         rearrangeAllEditors();
       } else if (msg && msg.type === "closeAll") {
         closeAll().catch((err) =>
-          console.error("Claude Grid: closeAll failed", err)
+          console.error("Codex Grid: closeAll failed", err)
         );
       } else if (msg && msg.type === "settings") {
         vscode.commands.executeCommand(
@@ -1066,6 +1197,8 @@ class PresetsViewProvider {
   html() {
     const presets = getConfig().get("presets") || [];
     const maxCols = Math.max(1, Number(getConfig().get("maxColumns")) || 3);
+    const agent = selectedAgent();
+    const agentLabel = selectedAgentLabel();
     const rows = presets
       .map((p, i) => {
         const name = escapeHtml(p.name || `Preset ${i + 1}`);
@@ -1109,6 +1242,32 @@ class PresetsViewProvider {
     color: var(--muted);
     margin: 2px 2px 12px;
     font-weight: 600;
+  }
+  .agent-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    margin: 0 0 10px;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #0f0f0f;
+  }
+  .agent-option {
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .agent-option:hover { color: var(--fg); }
+  .agent-option.active {
+    background: var(--fg);
+    color: var(--bg);
   }
   .add {
     display: flex;
@@ -1202,18 +1361,27 @@ class PresetsViewProvider {
 </head>
 <body>
   <h2>Presets</h2>
-  <button class="add" id="add" title="Open one more Claude terminal and re-tile the grid">
-    <span class="plus">+</span> Add terminal
+  <div class="agent-switch" aria-label="Terminal agent">
+    <button class="agent-option ${agent === "codex" ? "active" : ""}" data-agent="codex" aria-pressed="${agent === "codex"}">Codex</button>
+    <button class="agent-option ${agent === "claude" ? "active" : ""}" data-agent="claude" aria-pressed="${agent === "claude"}">Claude</button>
+  </div>
+  <button class="add" id="add" title="Open one more ${agentLabel} terminal and re-tile the grid">
+    <span class="plus">+</span> Add ${agentLabel} terminal
   </button>
   ${rows || '<div class="empty">No presets. Click “Edit presets”.</div>'}
   <div class="footer">
-    <button class="link" id="rearrange" title="Re-tile the Claude terminals this extension opened">Rearrange grid</button>
-    <button class="link" id="rearrangeAll" title="Grid every tab in the editor area — Claude chats, terminals, files">Grid all tabs</button>
+    <button class="link" id="rearrange" title="Re-tile the agent terminals this extension opened">Rearrange grid</button>
+    <button class="link" id="rearrangeAll" title="Grid every tab in the editor area — chats, terminals, files">Grid all tabs</button>
     <button class="link" id="close">Close all</button>
     <button class="link" id="edit">Edit presets</button>
   </div>
   <script>
     const vscode = acquireVsCodeApi();
+    document.querySelectorAll('.agent-option').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'setAgent', agent: btn.dataset.agent });
+      });
+    });
     document.getElementById('add').addEventListener('click', () => {
       vscode.postMessage({ type: 'addTerminal' });
     });
@@ -1360,7 +1528,7 @@ function sendToWindow(winId, specs) {
       JSON.stringify({ at: Date.now(), specs })
     );
   } catch (err) {
-    console.error("Claude Grid: sendToWindow failed", err);
+    console.error("Codex Grid: sendToWindow failed", err);
   }
 }
 
@@ -1546,14 +1714,25 @@ function activate(context) {
       )
     );
   } else {
+    // argv.json lives in the editor's data folder, which forks rename
+    // (VS Code ~/.vscode, Insiders ~/.vscode-insiders, Cursor ~/.cursor).
+    const argvPath = /cursor/i.test(vscode.env.appName)
+      ? "~/.cursor/argv.json"
+      : /insiders/i.test(vscode.env.appName)
+      ? "~/.vscode-insiders/argv.json"
+      : "~/.vscode/argv.json";
     console.warn(
-      "Claude Grid: terminalDataWriteEvent proposed API not enabled — " +
+      "Codex Grid: terminalDataWriteEvent proposed API not enabled — " +
         "finish notifications disabled. Add \"local.claude-terminals\" to the " +
-        "\"enable-proposed-api\" array in ~/.vscode/argv.json and restart."
+        `"enable-proposed-api" array in ${argvPath} and restart.`
     );
   }
 
   extContext = context;
+  const rememberedTabModel = context.globalState.get(TAB_MODEL_KEY, null);
+  if (typeof rememberedTabModel === "boolean") {
+    tabModelSeesTerminals = rememberedTabModel;
+  }
   // Reclaim ownership of terminals that survived a window reload.
   adoptRestoredTerminals();
 
@@ -1563,7 +1742,7 @@ function activate(context) {
   const hbTimer = setInterval(writeHeartbeat, 2000);
   const inboxTimer = setInterval(() => {
     pollInbox().catch((err) =>
-      console.error("Claude Grid: pollInbox failed", err)
+      console.error("Codex Grid: pollInbox failed", err)
     );
   }, 1000);
   context.subscriptions.push({
@@ -1578,7 +1757,7 @@ function activate(context) {
 
   // If this window was opened to receive spillover terminals, pick them up.
   consumeSpill().catch((err) =>
-    console.error("Claude Grid: consumeSpill failed", err)
+    console.error("Codex Grid: consumeSpill failed", err)
   );
 }
 
